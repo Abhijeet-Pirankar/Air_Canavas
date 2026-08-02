@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Air Canvas 3D Viewer</title>
+  <style>
+    body {margin: 0;overflow: hidden;background: #111;color: white;font-family: Arial, sans-serif;}
+    #info {position: absolute;top: 15px;left: 15px;z-index: 10;background: rgba(0,0,0,0.5);padding: 10px 14px;border-radius: 10px;}
+  </style>
+</head>
+<body>
+<div id="info">Loading 3D shape...</div>
+<script type="module">
+  import * as THREE from "https://esm.sh/three@0.160.0";
+  import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+  const info = document.getElementById("info");
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x111111);
+  const camera = new THREE.PerspectiveCamera(60,window.innerWidth / window.innerHeight,0.1,5000);
+  camera.position.set(0, 0, 700);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  const light1 = new THREE.DirectionalLight(0xffffff, 1.2);
+  light1.position.set(1, 1, 2);
+  scene.add(light1);
+  const light2 = new THREE.AmbientLight(0xffffff, 0.7);
+  scene.add(light2);
+  async function loadShape() {
+    try {
+      const response = await fetch("points.json");
+      if (!response.ok) {throw new Error("points.json not found");}
+      const points = await response.json();
+      if (points.length < 3) {info.innerText = "Not enough points to create 3D shape.";return;}
+      const shape = new THREE.Shape();
+      const startX = points[0].x - 320;
+      const startY = -(points[0].y - 240);
+      shape.moveTo(startX, startY);
+      for (let i = 1; i < points.length; i++) {const x = points[i].x - 320;const y = -(points[i].y - 240);shape.lineTo(x, y);}
+      shape.closePath();
+      const geometry = new THREE.ExtrudeGeometry(shape, {depth: 45,bevelEnabled: true,bevelThickness: 8,bevelSize: 8,bevelSegments: 4});
+      geometry.center();
+      const material = new THREE.MeshStandardMaterial({color: 0xff4fd8,roughness: 0.4,metalness: 0.05,side: THREE.DoubleSide});
+      const mesh = new THREE.Mesh(geometry, material);
+      scene.add(mesh);
+      info.innerText = "3D shape loaded. Drag to rotate.";
+      function animate() {requestAnimationFrame(animate);mesh.rotation.y += 0.005;controls.update();renderer.render(scene, camera);}
+      animate();
+    } catch (error) {console.error(error);
+      info.innerText = "Error loading 3D shape. Check points.json.";
+    }
+  }
+
+  loadShape();
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+</script>
+
+</body>
+</html>
