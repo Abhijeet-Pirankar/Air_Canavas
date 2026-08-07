@@ -16,6 +16,7 @@ from air_canvas_pro.ui.color_picker import ColorPicker
 from air_canvas_pro.ui.dashboard import Dashboard
 from air_canvas_pro.ui.theme import Theme
 from air_canvas_pro.utils.export_engine import ExportEngine
+from air_canvas_pro.ui.radial_menu import RadialMenu
 
 def main():
     # Setup Window
@@ -33,6 +34,7 @@ def main():
     toolbar = Toolbar(CANVAS_W, CANVAS_H)
     color_picker = ColorPicker(CANVAS_W // 2, CANVAS_H // 2, 120)
     dashboard = Dashboard(CANVAS_W, CANVAS_H)
+    radial_menu = RadialMenu()
     exporter = ExportEngine(BASE_DIR)
 
     # State
@@ -101,12 +103,29 @@ def main():
             is_drawing = (index_up and not middle_up)
             
             # Draw cursor
+            import time # ensure time is available for sin wave
             cursor_color = Theme.WHITE if is_selecting else color
-            cv2.circle(img_display, (x1, y1), 8, cursor_color, -1)
-            cv2.circle(img_display, (x1, y1), 16, cursor_color, 2)
+            cv2.circle(img_display, (x1, y1), 6, cursor_color, -1)
+            if is_selecting:
+                pulse_r = 16 + int(5 * np.sin(time.time() * 10))
+                cv2.circle(img_display, (x1, y1), pulse_r, Theme.CYAN, 2)
+            else:
+                cv2.circle(img_display, (x1, y1), 12, cursor_color, 1)
             
             # --- UI Interactions ---
-            if color_picker.is_visible:
+            if radial_menu.is_active:
+                action = radial_menu.update(x1, y1, is_selecting)
+                if action:
+                    if action == "clear":
+                        canvas.clear()
+                        dashboard.notify("Canvas Cleared")
+                    elif action == "undo":
+                        canvas.undo()
+                        dashboard.notify("Undo")
+                    elif action == "redo":
+                        canvas.redo()
+                        dashboard.notify("Redo")
+            elif color_picker.is_visible:
                 if is_selecting:
                     new_col = color_picker.hit_test(x1, y1)
                     if new_col:
@@ -135,8 +154,12 @@ def main():
                         else:
                             dashboard.notify("Failed to export 3D (No drawing found)")
                 
+                if is_selecting and toolbar.dwell_start and time.time() - toolbar.dwell_start > 1.0:
+                    radial_menu.open(x1, y1)
+                    toolbar.dwell_start = None
+                
                 # --- Drawing Interactions ---
-                elif is_drawing and not color_picker.is_visible and y1 > toolbar.panel_h:
+                elif is_drawing and not color_picker.is_visible and not radial_menu.is_active and y1 > (toolbar.margin_top + toolbar.panel_h) and y1 < (CANVAS_H - dashboard.bottom_h):
                     tool = toolbar.active_tool
                     
                     if tool == "draw":
@@ -206,6 +229,7 @@ def main():
         # Render UI
         toolbar.render(img_display)
         color_picker.render(img_display)
+        radial_menu.render(img_display)
         dashboard.render(img_display, toolbar.active_tool, brush_size, canvas.zoom, color)
 
         cv2.imshow("Air Canvas Pro", img_display)

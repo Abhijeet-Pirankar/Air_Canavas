@@ -5,10 +5,14 @@ import os
 from air_canvas_pro.ui.theme import Theme
 
 class Toolbar:
-    def __init__(self, width=640, height=480):
+    def __init__(self, width=1280, height=720):
         self.width = width
         self.height = height
-        self.panel_h = 110 # Increased for icons + text
+        
+        self.panel_h = 70
+        self.margin_top = 20
+        self.margin_side = 200 # Centered toolbar
+        
         self.is_visible = True
         self.last_interaction = time.time()
         
@@ -16,12 +20,16 @@ class Toolbar:
         self.active_tool = "draw"
         
         # Animations
-        self.slide_y = 0
         self.hover_idx = -1
         self.dwell_start = None
-        self.DWELL_TIME = 0.8   # Snappier: 0.8s instead of 1.0s
+        self.DWELL_TIME = 0.4 # Quick selection
+        
+        self.tooltips = {
+            "draw": "Draw", "eraser": "Eraser", "spray": "Airbrush", 
+            "crayon": "Palette", "shapes": "Shapes", "undo": "Undo", 
+            "redo": "Redo", "clear": "Clear", "save": "Save", "export_3d": "3D Export"
+        }
 
-        # Load and cache icons to prevent FPS drops
         self.icons = {}
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         icon_dir = os.path.join(base_dir, "assets", "icons")
@@ -32,21 +40,24 @@ class Toolbar:
                 img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
                 if img is not None:
                     if len(img.shape) == 3 and img.shape[2] == 4:
-                        img = cv2.resize(img, (34, 34))
+                        img = cv2.resize(img, (32, 32))
                         self.icons[t] = img
                     elif len(img.shape) == 3 and img.shape[2] == 3:
                         img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
-                        img = cv2.resize(img, (34, 34))
+                        img = cv2.resize(img, (32, 32))
                         self.icons[t] = img
 
     def hit_test(self, x, y):
         self.last_interaction = time.time()
-        if y < self.panel_h + 5:
-            btn_w = self.width // len(self.tools)
-            return min(max(x // btn_w, 0), len(self.tools) - 1)
+        panel_w = self.width - 2 * self.margin_side
+        if self.margin_top <= y <= self.margin_top + self.panel_h and self.margin_side <= x <= self.width - self.margin_side:
+            btn_w = panel_w // len(self.tools)
+            idx = (x - self.margin_side) // btn_w
+            return min(max(idx, 0), len(self.tools) - 1)
         return -1
 
     def update(self, x, y, is_selecting):
+        action = None
         if is_selecting:
             idx = self.hit_test(x, y)
             if idx != -1:
@@ -57,31 +68,45 @@ class Toolbar:
                     selected = self.tools[idx]
                     if selected not in ["undo", "redo", "clear", "save", "export_3d"]:
                         self.active_tool = selected
-                    self.dwell_start = None
-                    return selected
+                    action = selected
+                    # We do NOT reset dwell_start here so that if they hold it, it can trigger Radial Menu later!
+                    # But to avoid triggering action repeatedly, we need to handle it.
+                    # We will return the action once, and then set a flag or just let `air_canvas.py` debounce it.
+                    # Simple fix: return the action, but don't reset dwell_start.
+                    # Wait, if we return `selected` every frame after DWELL_TIME, save/undo will trigger 30 times a second.
+                    # We need a `has_triggered` flag.
+                    if not getattr(self, '_triggered_idx', None) == idx:
+                        self._triggered_idx = idx
+                        return selected
+                    return None
             else:
                 self.hover_idx = -1
                 self.dwell_start = None
+                self._triggered_idx = None
         else:
             self.hover_idx = -1
             self.dwell_start = None
+            self._triggered_idx = None
             
         return None
 
-    def draw_icon(self, frame, tool, cx, cy, color, is_active=False):
-        # We shift the icon up slightly to leave space for the text label below
+    def draw_icon(self, frame, tool, cx, cy, color, is_active=False, scale=1.0):
         if tool in self.icons:
             icon = self.icons[tool].copy()
             
             if is_active:
-                # Tint icon Cyan to match the active state
                 alpha_mask = icon[:, :, 3] > 0
                 icon[alpha_mask, 0] = Theme.CYAN[0]
                 icon[alpha_mask, 1] = Theme.CYAN[1]
                 icon[alpha_mask, 2] = Theme.CYAN[2]
 
+            if scale != 1.0:
+                h, w = icon.shape[:2]
+                new_size = (int(w * scale), int(h * scale))
+                icon = cv2.resize(icon, new_size, interpolation=cv2.INTER_LINEAR)
+
             h, w = icon.shape[:2]
-            top, left = cy - h // 2 - 8, cx - w // 2
+            top, left = int(cy - h // 2), int(cx - w // 2)
             
             if top >= 0 and left >= 0 and top+h <= frame.shape[0] and left+w <= frame.shape[1]:
                 roi = frame[top:top+h, left:left+w]
@@ -89,55 +114,40 @@ class Toolbar:
                 alpha_frame = 1.0 - alpha_icon
                 for c in range(3):
                     roi[:, :, c] = (alpha_icon * icon[:, :, c] + alpha_frame * roi[:, :, c])
-            
-            # Draw professional label below the icon
-            label = tool.replace("_", " ").title()
-            if label == "Export 3d":
-                label = "3D Export"
-            if label == "Spray":
-                label = "Brush"
-            if label == "Crayon":
-                label = "Palette"
-                
-            text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)[0]
-            tx = cx - text_size[0] // 2
-            ty = cy + h // 2 + 12
-            cv2.putText(frame, label, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
 
     def render(self, frame):
-        self.slide_y = 0
-        y_offset = self.slide_y
-        Theme.draw_glass_panel(frame, 0, y_offset, self.width, y_offset + self.panel_h)
+        panel_w = self.width - 2 * self.margin_side
         
-        btn_w = self.width // len(self.tools)
+        Theme.draw_glass_panel(frame, self.margin_side, self.margin_top, 
+                               self.width - self.margin_side, self.margin_top + self.panel_h, radius=16)
+        
+        btn_w = panel_w // len(self.tools)
         
         for i, tool in enumerate(self.tools):
-            x_start = i * btn_w
-            x_end = (i + 1) * btn_w
+            x_start = self.margin_side + i * btn_w
+            x_end = self.margin_side + (i + 1) * btn_w
             cx = x_start + btn_w // 2
-            cy = y_offset + self.panel_h // 2
+            cy = self.margin_top + self.panel_h // 2
             
             color = Theme.WHITE
             is_active = (tool == self.active_tool)
-            
-            # Rounded button coordinates with proper spacing
-            pad = 8
-            bx1, by1 = x_start + pad, y_offset + pad
-            bx2, by2 = x_end - pad, y_offset + self.panel_h - pad
+            icon_scale = 1.0
             
             if is_active:
-                # Active highlight (cyan glow border + brighter bg)
-                cv2.rectangle(frame, (bx1, by1), (bx2, by2), (90, 80, 70), -1)
-                cv2.rectangle(frame, (bx1, by1), (bx2, by2), Theme.CYAN, 2)
+                # Cyan glow border for active tool
+                Theme.draw_rounded_rect(frame, (x_start + 4, self.margin_top + 4), 
+                                        (x_end - 4, self.margin_top + self.panel_h - 4), 
+                                        Theme.CYAN, 2, radius=12)
                 color = Theme.CYAN
-            elif i == self.hover_idx:
-                # Smooth hover effect
-                cv2.rectangle(frame, (bx1, by1), (bx2, by2), (70, 60, 50), -1)
-                cv2.rectangle(frame, (bx1, by1), (bx2, by2), (120, 110, 100), 1)
-                if self.dwell_start:
-                    progress = min(1.0, (time.time() - self.dwell_start) / self.DWELL_TIME)
-                    w = int(progress * (bx2 - bx1))
-                    cv2.rectangle(frame, (bx1, by2 - 4), (bx1 + w, by2), Theme.CYAN, -1)
             
-            # Draw the cached icon + label
-            self.draw_icon(frame, tool, cx, cy, color, is_active=is_active)
+            if i == self.hover_idx:
+                icon_scale = 1.2
+                # Highlight background
+                Theme.draw_rounded_rect(frame, (x_start + 4, self.margin_top + 4), 
+                                        (x_end - 4, self.margin_top + self.panel_h - 4), 
+                                        (50, 45, 40), -1, radius=12)
+                
+                # Draw tooltip below
+                Theme.draw_tooltip(frame, self.tooltips.get(tool, tool), cx, self.margin_top + self.panel_h)
+            
+            self.draw_icon(frame, tool, cx, cy, color, is_active=is_active, scale=icon_scale)
