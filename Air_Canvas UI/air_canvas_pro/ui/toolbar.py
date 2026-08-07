@@ -112,6 +112,16 @@ class Toolbar:
                 roi = frame[top:top+h, left:left+w]
                 alpha_icon = icon[:, :, 3] / 255.0
                 alpha_frame = 1.0 - alpha_icon
+                
+                # Draw subtle drop shadow for 3D effect
+                sy, sx = 3, 2
+                shadow_alpha = alpha_icon * 0.4
+                shadow_frame_alpha = 1.0 - shadow_alpha
+                if top+sy >= 0 and left+sx >= 0 and top+sy+h <= frame.shape[0] and left+sx+w <= frame.shape[1]:
+                    s_roi = frame[top+sy:top+sy+h, left+sx:left+sx+w]
+                    for c in range(3):
+                        s_roi[:, :, c] = (shadow_frame_alpha * s_roi[:, :, c])
+                
                 for c in range(3):
                     roi[:, :, c] = (alpha_icon * icon[:, :, c] + alpha_frame * roi[:, :, c])
 

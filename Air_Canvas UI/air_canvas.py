@@ -32,7 +32,7 @@ def main():
     shape_ai = ShapeAI()
     
     toolbar = Toolbar(CANVAS_W, CANVAS_H)
-    color_picker = ColorPicker(CANVAS_W // 2, CANVAS_H // 2, 120)
+    color_picker = ColorPicker(80)
     dashboard = Dashboard(CANVAS_W, CANVAS_H)
     radial_menu = RadialMenu()
     exporter = ExportEngine(BASE_DIR)
@@ -153,6 +153,8 @@ def main():
                             dashboard.notify(f"Exported 3D: {os.path.basename(fname)}")
                         else:
                             dashboard.notify("Failed to export 3D (No drawing found)")
+                    elif action == "color_picker":
+                        color_picker.toggle(x1, y1 + 120)
                 
                 if is_selecting and toolbar.dwell_start and time.time() - toolbar.dwell_start > 1.0:
                     radial_menu.open(x1, y1)
