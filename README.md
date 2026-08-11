@@ -52,6 +52,6 @@ The stable version remains available in the `main` branch.
 
 Gesture-controlled drawing with a modern professional toolbar and icon-based controls.
 
-##To Run
+##To Run the Program <br>
 Run this command :-<br>
 "Stop-Process -Name "python" -Force -ErrorAction SilentlyContinue python qt_app/main.py"
