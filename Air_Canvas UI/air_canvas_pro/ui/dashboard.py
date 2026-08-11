@@ -26,7 +26,7 @@ class Dashboard:
         self.toast_msg = msg
         self.toast_time = time.time()
 
-    def render(self, frame, active_tool, brush_size, zoom, color):
+    def render(self, frame, active_tool, brush_size, zoom, color, tracking_active=True):
         self.update_fps()
         
         # Bottom Status Bar
@@ -44,8 +44,10 @@ class Dashboard:
         cv2.circle(frame, (color_x + 10, self.height - 20), 10, Theme.WHITE, 1)
         
         # Tracking & FPS
-        tracking_text = f"TRACKING: ACTIVE      FPS: {self.fps}"
-        cv2.putText(frame, tracking_text, (self.width - 250, self.height - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.45, Theme.SUCCESS, 1, cv2.LINE_AA)
+        track_str = "ACTIVE" if tracking_active else "Hand Not Detected"
+        color_t = Theme.SUCCESS if tracking_active else Theme.RED
+        tracking_text = f"TRACKING: {track_str}      FPS: {self.fps}"
+        cv2.putText(frame, tracking_text, (self.width - 350, self.height - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color_t, 1, cv2.LINE_AA)
 
         # Toast notifications
         if self.toast_msg and time.time() - self.toast_time < 2.0:

@@ -1,0 +1,127 @@
+/* Base application window */
+QMainWindow {
+    background-color: #080B12;
+}
+
+QToolTip {
+    background-color: rgba(18, 24, 34, 0.95);
+    color: #F5F7FA;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    padding: 6px;
+    font-family: 'Inter', 'Segoe UI';
+    font-size: 12px;
+}
+
+/* Glassmorphism Panels */
+QWidget#glassPanel {
+    background-color: rgba(18, 24, 34, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 20px;
+}
+
+/* Top Toolbar */
+QToolBar {
+    background-color: rgba(18, 24, 34, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 24px;
+    spacing: 16px;
+    padding: 12px 20px;
+}
+
+QToolButton {
+    background-color: rgba(25, 32, 45, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    color: #F5F7FA;
+    font-family: 'Inter', 'Segoe UI';
+}
+
+QToolButton:hover {
+    background-color: rgba(35, 42, 55, 0.88);
+    border: 1px solid rgba(0, 229, 255, 0.45);
+}
+
+QToolButton:checked {
+    background-color: rgba(0, 229, 255, 0.15);
+    border: 1px solid #00E5FF;
+}
+
+/* Layers Panel */
+QListWidget {
+    background-color: transparent;
+    border: none;
+    color: #F5F7FA;
+    font-family: 'Inter', 'Segoe UI';
+    font-size: 13px;
+    outline: none;
+}
+
+QListWidget::item {
+    background-color: rgba(25, 32, 45, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    margin-bottom: 10px;
+    padding: 12px;
+    color: #F5F7FA;
+}
+
+QListWidget::item:hover {
+    background-color: rgba(35, 42, 55, 0.95);
+    border: 1px solid rgba(0, 229, 255, 0.45);
+}
+
+QListWidget::item:selected {
+    background-color: rgba(0, 229, 255, 0.15);
+    border: 1px solid #00E5FF;
+    color: #FFFFFF;
+}
+
+QLabel {
+    color: #F5F7FA;
+    font-family: 'Inter', 'Segoe UI';
+}
+
+/* Brush Slider */
+QSlider::groove:vertical {
+    background: rgba(255, 255, 255, 0.15);
+    width: 6px;
+    border-radius: 3px;
+}
+
+QSlider::handle:vertical {
+    background: #00E5FF;
+    border: 2px solid rgba(255, 255, 255, 0.95);
+    height: 18px;
+    width: 18px;
+    margin: 0 -6px; /* expand outside groove */
+    border-radius: 9px;
+}
+
+QSlider::handle:vertical:hover {
+    background: #4DFFFF;
+    border: 2px solid #FFFFFF;
+    height: 20px;
+    width: 20px;
+    margin: 0 -7px;
+    border-radius: 10px;
+}
+
+QSlider::sub-page:vertical {
+    background: #00E5FF;
+    border-radius: 3px;
+}
+
+/* Status Bar */
+QStatusBar {
+    background-color: rgba(18, 24, 34, 0.85);
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    color: #8F9BAB;
+    font-family: 'Inter', 'Segoe UI';
+    font-size: 12px;
+}
+
+QStatusBar::item {
+    border: none;
+}
+

@@ -16,13 +16,13 @@ from air_canvas_pro.ui.color_picker import ColorPicker
 from air_canvas_pro.ui.dashboard import Dashboard
 from air_canvas_pro.ui.theme import Theme
 from air_canvas_pro.utils.export_engine import ExportEngine
-from air_canvas_pro.ui.radial_menu import RadialMenu
 
 def main():
     # Setup Window
     CANVAS_W, CANVAS_H = 1280, 720
     cv2.namedWindow("Air Canvas Pro", cv2.WINDOW_NORMAL)
     cv2.resizeWindow("Air Canvas Pro", CANVAS_W, CANVAS_H)
+    print("[DEBUG] Window creation success: 'Air Canvas Pro' created.")
 
     # Initialize Modules
     model_path = os.path.join(BASE_DIR, 'hand_landmarker.task')
@@ -34,7 +34,6 @@ def main():
     toolbar = Toolbar(CANVAS_W, CANVAS_H)
     color_picker = ColorPicker(80)
     dashboard = Dashboard(CANVAS_W, CANVAS_H)
-    radial_menu = RadialMenu()
     exporter = ExportEngine(BASE_DIR)
 
     # State
@@ -48,32 +47,56 @@ def main():
     clahe = cv2.createCLAHE(clipLimit=1.2, tileGridSize=(8,8))
 
     cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("[DEBUG] Camera failed: cv2.VideoCapture(0) could not open.")
+    else:
+        print("[DEBUG] Camera opened successfully.")
+
     # Try to request higher resolution from camera
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
+    frame_count = 0
+
     while running:
         success, img = cap.read()
         if not success:
-            break
+            print("[DEBUG] Camera failed to receive frame.")
+            # Keep window alive even if camera fails
+            img_display = np.zeros((CANVAS_H, CANVAS_W, 3), dtype=np.uint8)
+            cv2.putText(img_display, "Camera Failed / No Frame", (CANVAS_W//2 - 200, CANVAS_H//2), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            cv2.imshow("Air Canvas Pro", img_display)
+            if cv2.waitKey(100) & 0xFF == ord('q'):
+                running = False
+            continue
+            
+        if frame_count % 30 == 0:
+            print("[DEBUG] Frame received successfully.")
+        frame_count += 1
             
         img = cv2.flip(img, 1)
         img = cv2.resize(img, (CANVAS_W, CANVAS_H))
         
         # --- Image Enhancement Pipeline ---
         # 1. Convert to LAB color space
-        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-        l_channel, a, b = cv2.split(lab)
-        
-        # 2. Apply Gentle CLAHE to L channel for balanced exposure
-        l_channel = clahe.apply(l_channel)
-        
-        # 3. Merge back to BGR
-        enhanced_lab = cv2.merge((l_channel, a, b))
-        img_enhanced = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
-        
-        # 4. Enhance Brightness and Contrast (Very subtle, no overexposure)
-        img_enhanced = cv2.convertScaleAbs(img_enhanced, alpha=1.05, beta=0)
+        try:
+            lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+            l_channel, a, b = cv2.split(lab)
+            
+            # 2. Apply Gentle CLAHE to L channel for balanced exposure
+            l_channel = clahe.apply(l_channel)
+            
+            # 3. Merge back to BGR
+            enhanced_lab = cv2.merge((l_channel, a, b))
+            img_enhanced = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
+            
+            # 4. Enhance Brightness and Contrast (Very subtle, no overexposure)
+            img_enhanced = cv2.convertScaleAbs(img_enhanced, alpha=1.05, beta=0)
+            if frame_count % 30 == 1:
+                print("[DEBUG] Frame conversion success: BGR -> LAB -> BGR applied.")
+        except Exception as e:
+            print(f"[DEBUG] Frame conversion failed: {e}")
+            img_enhanced = img
         # ----------------------------------
         
         # Display the enhanced camera feed directly (feels like original camera)
@@ -85,6 +108,9 @@ def main():
         # Process Hands (Unmodified image to preserve MediaPipe performance and accuracy)
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         lmList = tracker.process_frame(img_rgb)
+        
+        if lmList and frame_count % 30 == 1:
+            print(f"[DEBUG] MediaPipe detection success: {len(lmList)} landmarks found.")
         
         is_drawing = False
         is_selecting = False
@@ -113,19 +139,7 @@ def main():
                 cv2.circle(img_display, (x1, y1), 12, cursor_color, 1)
             
             # --- UI Interactions ---
-            if radial_menu.is_active:
-                action = radial_menu.update(x1, y1, is_selecting)
-                if action:
-                    if action == "clear":
-                        canvas.clear()
-                        dashboard.notify("Canvas Cleared")
-                    elif action == "undo":
-                        canvas.undo()
-                        dashboard.notify("Undo")
-                    elif action == "redo":
-                        canvas.redo()
-                        dashboard.notify("Redo")
-            elif color_picker.is_visible:
+            if color_picker.is_visible:
                 if is_selecting:
                     new_col = color_picker.hit_test(x1, y1)
                     if new_col:
@@ -156,12 +170,8 @@ def main():
                     elif action == "color_picker":
                         color_picker.toggle(x1, y1 + 120)
                 
-                if is_selecting and toolbar.dwell_start and time.time() - toolbar.dwell_start > 1.0:
-                    radial_menu.open(x1, y1)
-                    toolbar.dwell_start = None
-                
                 # --- Drawing Interactions ---
-                elif is_drawing and not color_picker.is_visible and not radial_menu.is_active and y1 > (toolbar.margin_top + toolbar.panel_h) and y1 < (CANVAS_H - dashboard.bottom_h):
+                elif is_drawing and not color_picker.is_visible and y1 > (toolbar.margin_top + toolbar.panel_h) and y1 < (CANVAS_H - dashboard.bottom_h):
                     tool = toolbar.active_tool
                     
                     if tool == "draw":
@@ -231,12 +241,17 @@ def main():
         # Render UI
         toolbar.render(img_display)
         color_picker.render(img_display)
-        radial_menu.render(img_display)
-        dashboard.render(img_display, toolbar.active_tool, brush_size, canvas.zoom, color)
+        
+        tracking_active = bool(lmList)
+        dashboard.render(img_display, toolbar.active_tool, brush_size, canvas.zoom, color, tracking_active)
 
         cv2.imshow("Air Canvas Pro", img_display)
+        if frame_count % 30 == 1:
+            print("[DEBUG] cv2.imshow() reached successfully.")
 
         key = cv2.waitKey(1) & 0xFF
+        if frame_count % 30 == 1:
+            print("[DEBUG] cv2.waitKey(1) called continuously.")
         if key == ord('q'):
             running = False
         elif key == ord('c'):
