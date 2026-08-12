@@ -40,24 +40,36 @@ class Theme:
 
     @staticmethod
     def draw_glass_panel(frame, x1, y1, x2, y2, alpha=0.85, radius=16):
-        """Draws a premium 2026 dark panel with rounded glassmorphism feel."""
+        """Draws a premium dark panel with rounded glassmorphism feel.
+
+        Uses a two-layer blend: the dark PANEL_BG fill first, then a subtle
+        top-edge highlight line to simulate glass refraction sheen.
+        """
         h, w = frame.shape[:2]
         x1, y1 = max(0, int(x1)), max(0, int(y1))
         x2, y2 = min(w, int(x2)), min(h, int(y2))
-        
+
         if x2 <= x1 or y2 <= y1:
             return
 
+        # Main dark fill
         overlay = frame.copy()
         Theme.draw_rounded_rect(overlay, (x1, y1), (x2, y2), Theme.PANEL_BG, -1, radius)
-        
-        # We only want to blend where the rounded rect was drawn
-        # A simple addWeighted on the whole frame works because overlay is a copy of frame
-        # everywhere except the rounded rect.
         cv2.addWeighted(overlay, 1 - alpha, frame, alpha, 0, frame)
-        
-        # Soft subtle border for glass effect
-        Theme.draw_rounded_rect(frame, (x1, y1), (x2, y2), (60, 60, 60), 1, radius)
+
+        # Glass sheen: very thin lighter strip along the top inside edge
+        sheen_color = (55, 48, 44)
+        sheen_h     = max(2, (y2 - y1) // 8)
+        sheen_overlay = frame.copy()
+        Theme.draw_rounded_rect(
+            sheen_overlay,
+            (x1 + 2, y1 + 1), (x2 - 2, y1 + sheen_h),
+            sheen_color, -1, radius
+        )
+        cv2.addWeighted(sheen_overlay, 0.40, frame, 0.60, 0, frame)
+
+        # Outer border
+        Theme.draw_rounded_rect(frame, (x1, y1), (x2, y2), (72, 68, 65), 1, radius)
 
     @staticmethod
     def draw_tooltip(frame, text, x, y):

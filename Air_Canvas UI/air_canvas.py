@@ -239,7 +239,7 @@ def main():
         img_display[mask == 255] = zoomed_layer[mask == 255]
         
         # Render UI
-        toolbar.render(img_display)
+        toolbar.render(img_display, active_draw_color=color)
         color_picker.render(img_display)
         
         tracking_active = bool(lmList)
