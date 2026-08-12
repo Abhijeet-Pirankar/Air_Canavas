@@ -54,4 +54,4 @@ Gesture-controlled drawing with a modern professional toolbar and icon-based con
 
 <b>*To Run the Program*</b><br><br>
 Run this command :-<br>
-"Stop-Process -Name "python" -Force -ErrorAction SilentlyContinue python qt_app/main.py"
+<u>Stop-Process -Name "python" -Force -ErrorAction SilentlyContinue python qt_app/main.py<u>
