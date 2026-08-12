@@ -28,8 +28,15 @@ class DrawingEngine:
         self.color: tuple = self.CYAN          # BGR
         self.brush_size: int = 10
         self.eraser_size: int = 40
-        self._xp: int = 0
-        self._yp: int = 0
+
+        # Keep previous point as float for sub-pixel accuracy
+        self._xp: float = 0.0
+        self._yp: float = 0.0
+
+        # --- INTERPOLATION CONFIG ---
+        # Draw an intermediate point every N pixels of movement.
+        # Lower = smoother (but more CPU). 4.0 is a good balance.
+        self.INTERPOLATION_DISTANCE: float = 4.0
 
     # ------------------------------------------------------------------ tool
     def set_tool(self, tool: str):
@@ -42,11 +49,11 @@ class DrawingEngine:
         self.brush_size = max(1, size)
 
     # ------------------------------------------------------------ main update
-    def update(self, x: int, y: int, is_drawing: bool, img_display=None):
+    def update(self, x: float, y: float, is_drawing: bool, img_display=None):
         """
-        Called every frame with the filtered fingertip position.
-        img_display is the combined frame (for shape preview overlay only).
-        Returns the current drawing_layer (numpy array).
+        Called every frame with the smoothed float fingertip position.
+        Internally interpolates movement for gap-free continuous drawing.
+        Only casts to int at the cv2 drawing call boundary.
         """
         tool = self.active_tool
 
@@ -55,67 +62,76 @@ class DrawingEngine:
             if tool == "shapes" and (self._xp or self._yp):
                 self.shape_ai.process_stroke(self.canvas.drawing_layer,
                                              self.color, self.brush_size)
-            self._xp, self._yp = 0, 0
+            self._xp, self._yp = 0.0, 0.0
             return self.canvas.drawing_layer
 
         # ---- drawing is active ----
-        if tool == "pencil":
-            if self._xp or self._yp:
+        has_prev = bool(self._xp or self._yp)
+
+        if not has_prev:
+            # Start of a new stroke — take a snapshot for undo
+            self.canvas.snapshot()
+            self._xp, self._yp = x, y
+            return self.canvas.drawing_layer
+
+        # Compute distance and generate interpolated steps
+        dx = x - self._xp
+        dy = y - self._yp
+        dist = (dx * dx + dy * dy) ** 0.5
+
+        # Number of intermediate steps — more steps for fast movements
+        steps = max(1, int(dist / self.INTERPOLATION_DISTANCE))
+
+        for i in range(1, steps + 1):
+            t = i / steps
+            ix = self._xp + dx * t
+            iy = self._yp + dy * t
+
+            # Integer pixel coords for cv2 calls
+            ix_i = int(round(ix))
+            iy_i = int(round(iy))
+            pxi  = int(round(self._xp + dx * (i - 1) / steps))
+            pyi  = int(round(self._yp + dy * (i - 1) / steps))
+
+            if tool == "pencil":
                 cv2.line(self.canvas.drawing_layer,
-                         (self._xp, self._yp), (x, y),
+                         (pxi, pyi), (ix_i, iy_i),
                          self.color, self.brush_size, cv2.LINE_AA)
-            else:
-                self.canvas.snapshot()
-            self._xp, self._yp = x, y
 
-        elif tool == "eraser":
-            if self._xp or self._yp:
+            elif tool == "eraser":
                 cv2.line(self.canvas.drawing_layer,
-                         (self._xp, self._yp), (x, y),
+                         (pxi, pyi), (ix_i, iy_i),
                          (0, 0, 0), self.eraser_size)
-            else:
-                self.canvas.snapshot()
-            self._xp, self._yp = x, y
 
-        elif tool == "spray":
-            if not (self._xp or self._yp):
-                self.canvas.snapshot()
-            for _ in range(18):
-                ox = random.randint(-self.brush_size, self.brush_size)
-                oy = random.randint(-self.brush_size, self.brush_size)
-                sx, sy = x + ox, y + oy
-                if 0 <= sx < self.width and 0 <= sy < self.height:
-                    cv2.circle(self.canvas.drawing_layer, (sx, sy), 1,
-                               self.color, -1)
-            self._xp, self._yp = x, y
+            elif tool == "spray":
+                for _ in range(max(2, 18 // steps)):
+                    ox = random.randint(-self.brush_size, self.brush_size)
+                    oy = random.randint(-self.brush_size, self.brush_size)
+                    sx, sy = ix_i + ox, iy_i + oy
+                    if 0 <= sx < self.width and 0 <= sy < self.height:
+                        cv2.circle(self.canvas.drawing_layer, (sx, sy), 1,
+                                   self.color, -1)
 
-        elif tool == "crayon":
-            if not (self._xp or self._yp):
-                self.canvas.snapshot()
-            if self._xp or self._yp:
-                for _ in range(4):
-                    jx1 = self._xp + random.randint(-3, 3)
-                    jy1 = self._yp + random.randint(-3, 3)
-                    jx2 = x + random.randint(-3, 3)
-                    jy2 = y + random.randint(-3, 3)
+            elif tool == "crayon":
+                for _ in range(max(1, 4 // steps)):
+                    jx1 = pxi + random.randint(-3, 3)
+                    jy1 = pyi + random.randint(-3, 3)
+                    jx2 = ix_i + random.randint(-3, 3)
+                    jy2 = iy_i + random.randint(-3, 3)
                     cv2.line(self.canvas.drawing_layer,
                              (jx1, jy1), (jx2, jy2),
                              self.color, max(1, self.brush_size // 2))
-            self._xp, self._yp = x, y
 
-        elif tool == "shapes":
-            if not (self._xp or self._yp):
-                self.canvas.snapshot()
-                self.shape_ai.reset()
-            self.shape_ai.add_point((x, y))
-            # Preview overlay
-            if img_display is not None and len(self.shape_ai.current_stroke) > 1:
-                pts = np.array(self.shape_ai.current_stroke, np.int32)\
-                              .reshape((-1, 1, 2))
-                cv2.polylines(img_display, [pts], False,
-                              self.color, self.brush_size)
-            self._xp, self._yp = x, y
+            elif tool == "shapes":
+                self.shape_ai.add_point((ix_i, iy_i))
+                # Preview overlay
+                if img_display is not None and len(self.shape_ai.current_stroke) > 1:
+                    pts = np.array(self.shape_ai.current_stroke, np.int32)\
+                                  .reshape((-1, 1, 2))
+                    cv2.polylines(img_display, [pts], False,
+                                  self.color, self.brush_size)
 
+        self._xp, self._yp = x, y
         return self.canvas.drawing_layer
 
     # ------------------------------------------------------------ commands

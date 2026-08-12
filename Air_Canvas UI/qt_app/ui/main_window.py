@@ -7,7 +7,8 @@ import os, sys
 import numpy as np
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QGraphicsDropShadowEffect, QMessageBox, QGraphicsBlurEffect
+    QGraphicsDropShadowEffect, QMessageBox, QGraphicsBlurEffect,
+    QPushButton
 )
 from PyQt6.QtGui import QColor, QFont, QIcon
 from PyQt6.QtCore import Qt, QTimer
@@ -78,10 +79,19 @@ class MainWindow(QMainWindow):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # ── TOP TOOLBAR (full-width dedicated row) ──────────────────────
+        # ── TOP TOOLBAR (floating glass panel) ──────────────────────
         self.toolbar = TopToolbar()
+        self.toolbar.setObjectName("glassPanel")
+        # Ensure toolbar uses the glassPanel style
+        self.toolbar.setStyleSheet("")
         _shadow(self.toolbar, blur=20, offset=(0, 4))
-        outer.addWidget(self.toolbar)
+        
+        toolbar_container = QHBoxLayout()
+        toolbar_container.setContentsMargins(32, 16, 32, 16)
+        toolbar_container.addStretch(1)
+        toolbar_container.addWidget(self.toolbar)
+        toolbar_container.addStretch(1)
+        outer.addLayout(toolbar_container)
 
         # ── BODY: camera canvas + right sidebar ─────────────────────────
         body = QWidget()
@@ -94,11 +104,39 @@ class MainWindow(QMainWindow):
         self.canvas_widget = CanvasWidget()
         body_layout.addWidget(self.canvas_widget, stretch=1)
 
+        # Collapse button
+        self.collapse_btn = QPushButton(">")
+        self.collapse_btn.setFixedSize(20, 60)
+        self.collapse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.collapse_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(18,24,34,0.82);
+                border: 1px solid rgba(255,255,255,0.12);
+                border-top-left-radius: 10px;
+                border-bottom-left-radius: 10px;
+                border-right: none;
+                color: #00E5FF;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: rgba(0, 229, 255, 0.15);
+            }
+        """)
+        self.collapse_btn.clicked.connect(self._toggle_sidebar)
+        
+        btn_layout = QVBoxLayout()
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.collapse_btn)
+        btn_layout.addStretch()
+
+        body_layout.addLayout(btn_layout)
+
         # Right sidebar: Layers + Brush Slider
-        right_panel = QWidget()
-        right_panel.setFixedWidth(270)
-        right_panel.setStyleSheet("background: rgba(10,13,20,0.95); border-left: 1px solid rgba(255,255,255,0.08);")
-        right_layout = QVBoxLayout(right_panel)
+        self.right_panel = QWidget()
+        self.right_panel.setMaximumWidth(240)
+        self.right_panel.setStyleSheet("background: rgba(10,13,20,0.95); border-left: 1px solid rgba(255,255,255,0.08);")
+        right_layout = QVBoxLayout(self.right_panel)
         right_layout.setContentsMargins(12, 16, 12, 16)
         right_layout.setSpacing(16)
 
@@ -111,7 +149,7 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.brush_slider)
         right_layout.addStretch()
 
-        body_layout.addWidget(right_panel)
+        body_layout.addWidget(self.right_panel)
         outer.addWidget(body, stretch=1)
 
         # STATUS BAR
@@ -161,25 +199,32 @@ class MainWindow(QMainWindow):
     # ==================================================================
     # Per-frame callback (main thread, signal-slot)
     # ==================================================================
-    def _on_frame(self, cam_frame, lmList, is_drawing, is_selecting, x1, y1):
-        # Toolbar is now a fixed header outside the camera area
-        # No toolbar-height guard needed – all y coords are within the canvas
-        effective_drawing = is_drawing and not self.color_picker.isVisible()
-        
-        if lmList:
-            now = time.time()
-            if now - getattr(self, '_last_print_time', 0) > 1.0:
-                print(f"[HAND] Fingertip: {x1}, {y1}")
-                if effective_drawing:
-                    print(f"[DRAW] Drawing at {x1}, {y1}")
-                self._last_print_time = now
-        
-        self._engine.update(x1, y1, effective_drawing, cam_frame)
+    def _on_frame(self, cam_frame, lmList, is_drawing, is_selecting,
+                  x1: float, y1: float):
+        try:
+            effective_drawing = is_drawing and not self.color_picker.isVisible()
 
-        # Refresh canvas widget
-        self.canvas_widget.update_frame(
-            cam_frame, self._engine.get_layer(),
-            lmList, is_drawing, is_selecting, x1, y1)
+            if lmList:
+                now = time.time()
+                if now - getattr(self, '_last_print_time', 0) > 1.0:
+                    print(f"[HAND] Fingertip: {x1}, {y1}")
+                    if effective_drawing:
+                        print(f"[DRAW] Drawing at {x1}, {y1}")
+                    self._last_print_time = now
+
+            self._engine.update(x1, y1, effective_drawing, cam_frame)
+
+            # Refresh canvas widget
+            self.canvas_widget.update_frame(
+                cam_frame, self._engine.get_layer(),
+                lmList, is_drawing, is_selecting, x1, y1)
+        except Exception:
+            import traceback, os as _os
+            err = traceback.format_exc()
+            print(f"[FRAME ERROR]\n{err}")
+            log_path = _os.path.join(_os.path.dirname(__file__), '..', 'qt_error.log')
+            with open(log_path, 'a') as f:
+                f.write(err + '\n')
 
     # ==================================================================
     # Toolbar actions
@@ -241,7 +286,24 @@ class MainWindow(QMainWindow):
         bgr = (qt_color.blue(), qt_color.green(), qt_color.red())
         self._engine.set_color_bgr(bgr)
         self.canvas_widget.set_active_color(bgr)
+        
+        # Update color dot on toolbar
+        for w in self.toolbar.findChildren(QWidget):
+            if hasattr(w, 'set_color_indicator') and getattr(w, 'lbl', None) and w.lbl.text() == "Color":
+                w.set_color_indicator(qt_color.name())
+                
         print(f"[TOOL] Color changed to {bgr}")
+
+    # ==================================================================
+    # Right Sidebar Toggle
+    # ==================================================================
+    def _toggle_sidebar(self):
+        if self.right_panel.isVisible():
+            self.right_panel.hide()
+            self.collapse_btn.setText("<")
+        else:
+            self.right_panel.show()
+            self.collapse_btn.setText(">")
 
     # ==================================================================
     # Brush slider

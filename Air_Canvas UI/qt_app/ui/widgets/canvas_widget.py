@@ -38,8 +38,10 @@ class CanvasWidget(QLabel):
     def update_frame(self, cam_frame: np.ndarray,
                      drawing_layer: np.ndarray,
                      lmList: list, is_drawing: bool,
-                     is_selecting: bool, x1: int, y1: int):
+                     is_selecting: bool, x1: float, y1: float):
         """Composite camera + drawing layer, draw cursor, push to QPixmap."""
+        # Convert float fingertip coords to int only for OpenCV rendering
+        cx, cy = int(round(x1)), int(round(y1))
         # Print a debug log occasionally
         if not hasattr(self, '_debug_counter'):
             self._debug_counter = 0
@@ -75,20 +77,18 @@ class CanvasWidget(QLabel):
 
         # ---- Draw cursor ----
         if lmList:
-            # Fingertip tracking cursor should be a small glowing cyan circle
-            cyan_color = (255, 229, 0) # OpenCV is BGR: 0x00E5FF in BGR -> (255, 229, 0)
+            cyan_color = (255, 229, 0)   # BGR: 0x00E5FF
             color = (255, 255, 255) if is_selecting else cyan_color
-            
-            # Glow effect
-            cv2.circle(display, (x1, y1), 14, (255, 229, 0), -1) # Wait, solid color will be opaque, let's use alpha blending or just a hollow circle for glow.
-            # Actually, OpenCV doesn't do alpha well without full mask. Let's draw a few concentric circles for glow.
-            cv2.circle(display, (x1, y1), 14, (200, 180, 0), 1) 
-            cv2.circle(display, (x1, y1), 10, (220, 200, 0), 2)
-            cv2.circle(display, (x1, y1), 6, color, -1)
-            
+
+            # Outer glow rings — concentric circles at decreasing opacity
+            cv2.circle(display, (cx, cy), 14, (100, 90, 0),  1)
+            cv2.circle(display, (cx, cy), 10, (200, 180, 0), 2)
+            # Solid core
+            cv2.circle(display, (cx, cy),  6, color,         -1)
+
             if is_selecting:
                 pulse_r = 16 + int(5 * math.sin(time.time() * 10))
-                cv2.circle(display, (x1, y1), pulse_r, (255, 255, 255), 2)
+                cv2.circle(display, (cx, cy), pulse_r, (255, 255, 255), 2)
 
         # ---- Premium Styling: Rounded Corners Mask ----
         if not hasattr(self, '_corner_mask') or self._corner_mask.shape[:2] != (h, w):

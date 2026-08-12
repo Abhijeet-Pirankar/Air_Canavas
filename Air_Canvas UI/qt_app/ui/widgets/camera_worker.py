@@ -7,11 +7,12 @@ import time
 import cv2
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
+from core.smooth_cursor import AdvancedCursorFilter
 
 
 class CameraWorker(QThread):
     # Emits: (display_frame_bgr, lmList, is_drawing, is_selecting, x1, y1)
-    frame_ready = pyqtSignal(np.ndarray, list, bool, bool, int, int)
+    frame_ready = pyqtSignal(np.ndarray, list, bool, bool, float, float)
     fps_updated = pyqtSignal(int)
     tracking_changed = pyqtSignal(bool)
     camera_status_changed = pyqtSignal(bool)
@@ -22,6 +23,8 @@ class CameraWorker(QThread):
         self.canvas_w = canvas_w
         self.canvas_h = canvas_h
         self._running = True
+        self.cursor_filter = AdvancedCursorFilter()
+        self._cap = None  # accessible for early release on stop()
 
         # CLAHE for subtle enhancement
         self._clahe = cv2.createCLAHE(clipLimit=1.2, tileGridSize=(8, 8))
@@ -30,6 +33,13 @@ class CameraWorker(QThread):
 
     def stop(self):
         self._running = False
+        # Release cap immediately to unblock cap.read() in the run loop
+        if self._cap is not None:
+            try:
+                self._cap.release()
+            except Exception:
+                pass
+            self._cap = None
 
     def run(self):
         print("[CAMERA] CameraWorker starting...")
@@ -37,6 +47,7 @@ class CameraWorker(QThread):
         if cap is None:
             print("[CAMERA] Could not open camera. Exiting worker.")
             return
+        self._cap = cap
 
         frame_count = 0
         fps_t = time.time()
@@ -93,19 +104,26 @@ class CameraWorker(QThread):
             lmList = self.tracker.process_frame(img_rgb)
 
             is_drawing = is_selecting = False
-            x1 = y1 = 0
+            x1: float = 0.0
+            y1: float = 0.0
 
             if lmList:
                 index_up  = lmList[8][2]  < lmList[6][2]
                 middle_up = lmList[12][2] < lmList[10][2]
-                raw_x, raw_y = lmList[8][1], lmList[8][2]
-                x1, y1 = self.tracker.get_filtered_index(raw_x, raw_y)
-                x1 = max(0, min(self.canvas_w - 1, x1))
-                y1 = max(0, min(self.canvas_h - 1, y1))
+                raw_x, raw_y = float(lmList[8][1]), float(lmList[8][2])
+                
+                # Apply advanced floating-point smoothing
+                x1, y1 = self.cursor_filter.update(raw_x, raw_y)
+                
+                # Clamp safely within canvas boundaries
+                x1 = max(0.0, min(float(self.canvas_w - 1), x1))
+                y1 = max(0.0, min(float(self.canvas_h - 1), y1))
+                
                 is_selecting = index_up and middle_up
                 is_drawing   = index_up and not middle_up
             else:
                 self.tracker.reset_filters()
+                self.cursor_filter.reset()
 
             # ---- Tracking status change ----
             tracking_now = bool(lmList)

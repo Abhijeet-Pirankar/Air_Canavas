@@ -6,7 +6,7 @@ QMainWindow {
 QToolTip {
     background-color: rgba(18, 24, 34, 0.95);
     color: #F5F7FA;
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 6px;
     padding: 6px;
     font-family: 'Inter', 'Segoe UI';

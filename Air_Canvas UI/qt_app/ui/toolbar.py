@@ -4,10 +4,10 @@ Premium full-width top toolbar with large icons, labels, and separate tool group
 """
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QToolButton,
-    QLabel, QFrame, QSizePolicy
+    QLabel, QFrame, QSizePolicy, QGraphicsDropShadowEffect
 )
-from PyQt6.QtGui import QIcon, QColor, QPixmap, QPainter, QFont
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QIcon, QColor, QPixmap, QPainter, QFont, QPen, QBrush
+from PyQt6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve
 import os
 
 
@@ -46,50 +46,85 @@ def _divider() -> QFrame:
     return line
 
 
+class AnimatedToolButton(QToolButton):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.indicator_color = None
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.indicator_color:
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            
+            # Draw dot in bottom-right quadrant of the button
+            dot_r = 5
+            cx = self.width() - 14
+            cy = self.height() - 14
+            
+            painter.setPen(QPen(QColor(255, 255, 255, 180), 1))
+            painter.setBrush(QBrush(QColor(self.indicator_color)))
+            painter.drawEllipse(cx - dot_r, cy - dot_r, dot_r * 2, dot_r * 2)
+            painter.end()
+
+
 class ToolBtn(QWidget):
     """Icon + label stacked vertically, looks like a pro tool button."""
 
     def __init__(self, icon_path: str, label: str, checkable: bool = True, parent=None):
         super().__init__(parent)
-        self.setFixedSize(QSize(72, 82))
+        self.setFixedSize(QSize(76, 86))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         vlay = QVBoxLayout(self)
-        vlay.setContentsMargins(0, 6, 0, 6)
-        vlay.setSpacing(4)
+        vlay.setContentsMargins(0, 4, 0, 4)
+        vlay.setSpacing(6)
         vlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # --- Button (icon only) ---
-        self.btn = QToolButton()
-        self.btn.setFixedSize(QSize(48, 48))
-        self.btn.setIconSize(QSize(28, 28))
+        self.btn = AnimatedToolButton()
+        self.btn.setFixedSize(QSize(52, 52))
+        self.btn.setIconSize(QSize(26, 26))
         self.btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn.setIcon(create_stateful_icon(icon_path))
         self.btn.setCheckable(checkable)
-        self.btn.setAutoExclusive(False)   # managed by TopToolbar
+        self.btn.setAutoExclusive(False)
         self.btn.setStyleSheet("""
             QToolButton {
-                background: rgba(30, 38, 52, 0.55);
-                border: 1px solid rgba(255,255,255,0.09);
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-top: 1px solid rgba(255, 255, 255, 0.20); /* Inner highlight */
                 border-radius: 14px;
             }
             QToolButton:hover {
-                background: rgba(45, 55, 72, 0.80);
-                border: 1px solid rgba(0,229,255,0.35);
+                background: rgba(255, 255, 255, 0.12);
+                border: 1px solid rgba(0, 229, 255, 0.45);
             }
             QToolButton:checked {
-                background: rgba(0, 229, 255, 0.14);
+                background: rgba(0, 229, 255, 0.12);
                 border: 1px solid #00E5FF;
             }
         """)
+
+        # Soft shadow
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(15)
+        shadow.setColor(QColor(0, 0, 0, 80))
+        shadow.setOffset(0, 4)
+        self.btn.setGraphicsEffect(shadow)
+
+        # Hover animation
+        self._anim = QPropertyAnimation(self.btn, b"iconSize")
+        self._anim.setDuration(180)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
 
         # --- Label ---
         self.lbl = QLabel(label)
         self.lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl.setStyleSheet(
-            "color: rgba(180,190,210,1); font-family:'Segoe UI','Inter',sans-serif; font-size:10px; font-weight:500; letter-spacing:0.5px;"
+            "color: rgba(180,190,210,1); font-family:'Segoe UI','Inter',sans-serif; font-size:11px; font-weight:500; letter-spacing:0.5px;"
         )
-        self.lbl.setFixedWidth(72)
+        self.lbl.setFixedWidth(76)
 
         vlay.addWidget(self.btn, alignment=Qt.AlignmentFlag.AlignHCenter)
         vlay.addWidget(self.lbl)
@@ -98,11 +133,27 @@ class ToolBtn(QWidget):
         self.btn.setChecked(state)
         color = "rgba(0,229,255,1)" if state else "rgba(180,190,210,1)"
         self.lbl.setStyleSheet(
-            f"color:{color}; font-family:'Segoe UI','Inter',sans-serif; font-size:10px; font-weight:{'700' if state else '500'}; letter-spacing:0.5px;"
+            f"color:{color}; font-family:'Segoe UI','Inter',sans-serif; font-size:11px; font-weight:{'700' if state else '500'}; letter-spacing:0.5px;"
         )
 
     def isChecked(self) -> bool:
         return self.btn.isChecked()
+
+    def set_color_indicator(self, hex_color: str):
+        self.btn.indicator_color = hex_color
+        self.btn.update()
+
+    def enterEvent(self, event):
+        self._anim.stop()
+        self._anim.setEndValue(QSize(30, 30))
+        self._anim.start()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._anim.stop()
+        self._anim.setEndValue(QSize(26, 26))
+        self._anim.start()
+        super().leaveEvent(event)
 
 
 class TopToolbar(QWidget):
