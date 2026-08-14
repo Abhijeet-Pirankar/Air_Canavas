@@ -30,3 +30,8 @@ python air_canvas.py
 ## Author
 
 Abhijeet Pirankar
+
+<b>*To Run the Program*</b><br><br>
+In second branch<br>
+Run this command :-<br>
+<u>Stop-Process -Name "python" -Force -ErrorAction SilentlyContinue python qt_app/main.py<u>
